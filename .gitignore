@@ -1,0 +1,27 @@
+# macOS artifacts
+.DS_Store
+
+# VS Code
+.vscode/*.log
+
+# Data directories
+data/raw/
+
+# Output files
+outputs/**/*.png
+outputs/**/*.pdf
+outputs/**/*.svg
+outputs/**/*.html
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+.eggs/
+*.egg
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
