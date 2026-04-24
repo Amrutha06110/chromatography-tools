@@ -123,6 +123,11 @@ with st.sidebar:
         type=["csv"],
         accept_multiple_files=True,
     )
+    parent_dir_name = st.text_input(
+        "Parent directory name",
+        value="",
+        help="Prepend the parent directory name to each uploaded file's name for identification.",
+    )
 
     st.header("Technique")
     technique = st.selectbox(
@@ -166,7 +171,9 @@ if uploaded_files:
     for uf in uploaded_files:
         df = read_two_col_csv(uf)
         if df is not None:
-            datasets.append({"filename": uf.name, "label": uf.name.rsplit(".", 1)[0], "df": df})
+            prefix = parent_dir_name.strip()
+            fname = f"{prefix}_{uf.name}" if prefix else uf.name
+            datasets.append({"filename": fname, "label": fname.rsplit(".", 1)[0], "df": df})
 
 if not datasets:
     st.info("Upload at least one CSV file to begin analysis.")
