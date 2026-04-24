@@ -16,6 +16,7 @@ from typing import Any
 import numpy as np
 import pandas as pd
 import streamlit as st
+import streamlit.components.v1 as components
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
@@ -123,6 +124,25 @@ with st.sidebar:
         "Upload all files from a sample directory "
         "(the DAD1A file will be selected automatically)",
         accept_multiple_files=True,
+    )
+
+    # Enable folder/directory selection in the browser file dialog.
+    # Streamlit's file_uploader does not natively support the
+    # ``webkitdirectory`` attribute, so we inject a small script that
+    # adds it to the rendered <input type="file"> element.
+    components.html(
+        """
+        <script>
+        const inputs = window.parent.document.querySelectorAll(
+            'input[type=file]'
+        );
+        inputs.forEach(function(input) {
+            input.setAttribute('webkitdirectory', '');
+            input.setAttribute('directory', '');
+        });
+        </script>
+        """,
+        height=0,
     )
 
     st.header("Technique")
