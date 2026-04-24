@@ -124,22 +124,39 @@ with st.sidebar:
         "Upload all files from a sample directory "
         "(the DAD1A file will be selected automatically)",
         accept_multiple_files=True,
+        key="directory_uploader",
     )
 
     # Enable folder/directory selection in the browser file dialog.
     # Streamlit's file_uploader does not natively support the
     # ``webkitdirectory`` attribute, so we inject a small script that
-    # adds it to the rendered <input type="file"> element.
+    # adds it to the rendered <input type="file"> element.  A
+    # MutationObserver is used to wait until the input element is
+    # present in the DOM before modifying it.
     components.html(
         """
         <script>
-        const inputs = window.parent.document.querySelectorAll(
-            'input[type=file]'
-        );
-        inputs.forEach(function(input) {
-            input.setAttribute('webkitdirectory', '');
-            input.setAttribute('directory', '');
-        });
+        function enableDirectoryUpload() {
+            const inputs = window.parent.document.querySelectorAll(
+                'section[data-testid="stFileUploadDropzone"] input[type=file]'
+            );
+            inputs.forEach(function(input) {
+                if (!input.hasAttribute('webkitdirectory')) {
+                    input.setAttribute('webkitdirectory', '');
+                    input.setAttribute('directory', '');
+                }
+            });
+            return inputs.length > 0;
+        }
+        if (!enableDirectoryUpload()) {
+            var observer = new MutationObserver(function() {
+                if (enableDirectoryUpload()) { observer.disconnect(); }
+            });
+            observer.observe(
+                window.parent.document.body,
+                {childList: true, subtree: true}
+            );
+        }
         </script>
         """,
         height=0,
