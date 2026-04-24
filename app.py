@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import io
 import json
+import pathlib
 from typing import Any
 
 import numpy as np
@@ -119,14 +120,9 @@ st.title("Chromatography Peak Analysis")
 with st.sidebar:
     st.header("Data")
     uploaded_files = st.file_uploader(
-        "Upload CSV files (2 columns: time, intensity)",
-        type=["csv"],
+        "Upload all files from a sample directory "
+        "(the DAD1A file will be selected automatically)",
         accept_multiple_files=True,
-    )
-    parent_dir_name = st.text_input(
-        "Parent directory name",
-        value="",
-        help="Prepend the parent directory name to each uploaded file's name for identification.",
     )
 
     st.header("Technique")
@@ -168,11 +164,32 @@ with st.sidebar:
 datasets: list[dict[str, Any]] = []
 
 if uploaded_files:
-    for uf in uploaded_files:
+    # Separate files into DAD1A matches and others.
+    dad1a_files = [uf for uf in uploaded_files if "DAD1A" in uf.name.upper()]
+    other_csv_files = [
+        uf for uf in uploaded_files
+        if "DAD1A" not in uf.name.upper() and uf.name.lower().endswith(".csv")
+    ]
+
+    # Prefer the DAD1A file; fall back to all CSVs when none is found.
+    target_files = dad1a_files if dad1a_files else other_csv_files
+
+    for uf in target_files:
         df = read_two_col_csv(uf)
         if df is not None:
-            prefix = parent_dir_name.strip()
-            fname = f"{prefix}_{uf.name}" if prefix else uf.name
+            # When the browser supports directory upload the
+            # UploadedFile may carry a ``webkitRelativePath``
+            # attribute containing the parent directory name
+            # (e.g. "SampleDir/DAD1A.csv").  Use it to build a
+            # descriptive filename; otherwise fall back to the
+            # bare filename.
+            rel_path: str = getattr(uf, "webkitRelativePath", "") or ""
+            parts = pathlib.PurePosixPath(rel_path).parts
+            if len(parts) > 1:
+                dir_name = parts[-2]
+                fname = f"{dir_name}_{uf.name}"
+            else:
+                fname = uf.name
             datasets.append({"filename": fname, "label": fname.rsplit(".", 1)[0], "df": df})
 
 if not datasets:
