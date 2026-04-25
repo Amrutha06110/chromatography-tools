@@ -16,6 +16,7 @@ from typing import Any
 import numpy as np
 import pandas as pd
 import streamlit as st
+import streamlit.components.v1 as components
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
@@ -120,9 +121,37 @@ st.title("Chromatography Peak Analysis")
 with st.sidebar:
     st.header("Data")
     uploaded_files = st.file_uploader(
-        "Upload all files from a sample directory "
-        "(the DAD1A file will be selected automatically)",
+        "Select a folder to upload all files "
+        "(DAD1A files will be processed automatically)",
         accept_multiple_files=True,
+    )
+
+    # Inject JavaScript to convert the file uploader into a folder
+    # picker by adding the ``webkitdirectory`` attribute to its
+    # underlying <input type="file"> element.  A MutationObserver
+    # ensures the attribute is re-applied whenever Streamlit re-renders
+    # the widget.
+    components.html(
+        """
+        <script>
+        function enableFolderUpload() {
+            const doc = window.parent.document;
+            const inputs = doc.querySelectorAll('input[type="file"]');
+            inputs.forEach(function(input) {
+                if (!input.hasAttribute('webkitdirectory')) {
+                    input.setAttribute('webkitdirectory', '');
+                    input.setAttribute('directory', '');
+                }
+            });
+        }
+        enableFolderUpload();
+        const observer = new MutationObserver(enableFolderUpload);
+        observer.observe(window.parent.document.body,
+                         {childList: true, subtree: true});
+        setTimeout(function() { observer.disconnect(); }, 10000);
+        </script>
+        """,
+        height=0,
     )
 
     st.header("Technique")
