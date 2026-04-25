@@ -127,28 +127,40 @@ with st.sidebar:
     )
 
     # Inject JavaScript to convert the file uploader into a folder
-    # picker by adding the ``webkitdirectory`` attribute to its
-    # underlying <input type="file"> element.  A MutationObserver
-    # ensures the attribute is re-applied whenever Streamlit re-renders
-    # the widget.
+    # picker by adding the ``webkitdirectory`` and ``directory``
+    # attributes to its underlying <input type="file"> element.
+    # A MutationObserver ensures the attribute is applied even if the
+    # file input has not been rendered yet when the script first runs.
+    # The observer disconnects as soon as the attribute is successfully
+    # set, keeping resource usage minimal.
     components.html(
         """
         <script>
-        function enableFolderUpload() {
-            const doc = window.parent.document;
-            const inputs = doc.querySelectorAll('input[type="file"]');
-            inputs.forEach(function(input) {
-                if (!input.hasAttribute('webkitdirectory')) {
+        (function() {
+            var applied = false;
+            function enableFolderUpload() {
+                var doc = window.parent.document;
+                var container = doc.querySelector(
+                    '[data-testid="stFileUploader"]'
+                );
+                if (!container) return;
+                var input = container.querySelector('input[type="file"]');
+                if (input && !input.hasAttribute('webkitdirectory')) {
                     input.setAttribute('webkitdirectory', '');
                     input.setAttribute('directory', '');
+                    applied = true;
                 }
-            });
-        }
-        enableFolderUpload();
-        const observer = new MutationObserver(enableFolderUpload);
-        observer.observe(window.parent.document.body,
-                         {childList: true, subtree: true});
-        setTimeout(function() { observer.disconnect(); }, 10000);
+            }
+            enableFolderUpload();
+            if (!applied) {
+                var observer = new MutationObserver(function() {
+                    enableFolderUpload();
+                    if (applied) observer.disconnect();
+                });
+                observer.observe(window.parent.document.body,
+                                 {childList: true, subtree: true});
+            }
+        })();
         </script>
         """,
         height=0,
