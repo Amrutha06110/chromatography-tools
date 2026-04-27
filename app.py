@@ -17,7 +17,6 @@ from typing import Any
 import numpy as np
 import pandas as pd
 import streamlit as st
-import streamlit.components.v1 as components
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
@@ -45,6 +44,29 @@ TECHNIQUE_MAP: dict[str, type[BaseChromatogram]] = {
 # Helpers
 # ------------------------------------------------------------------
 
+_AB_PATTERN = re.compile(r"(?<![A-Za-z])(AB[\s\-_]?\d+)", re.IGNORECASE)
+
+
+def _extract_ab_number(*sources: str) -> str | None:
+    """Return the first ``AB<digits>`` token found in any of *sources*.
+
+    Each source is a free-form string — it can be a filename, a folder
+    name, or a relative path.  Supports optional separators between
+    ``AB`` and the digits (e.g. ``AB734``, ``AB-734``, ``AB_734``).
+    Returns the normalised, uppercased identifier (e.g. ``"AB734"``)
+    on the first match, or ``None`` when nothing is found.
+
+    Sources are checked left-to-right, so callers should pass
+    higher-priority strings first.
+    """
+    for text in sources:
+        m = _AB_PATTERN.search(text)
+        if m:
+            # Normalise: strip any separator between "AB" and the digits.
+            return re.sub(r"[\s\-_]", "", m.group(1)).upper()
+    return None
+
+
 def read_two_col_csv(uploaded_file: Any) -> pd.DataFrame | None:
     """Read a 2-column CSV into a ``time`` / ``intensity`` DataFrame."""
     try:
@@ -59,6 +81,51 @@ def read_two_col_csv(uploaded_file: Any) -> pd.DataFrame | None:
     if df.empty:
         return None
     return df
+
+
+def _scan_local_directory(dir_path: str) -> list[dict[str, Any]]:
+    """Scan a local directory for ``DAD1A*.csv`` files and return datasets.
+
+    Each dataset dict has keys ``filename``, ``label``, and ``df``.  The
+    label is the AB identifier extracted from the file's ancestor
+    directories, falling back to the parent directory name.
+
+    **Security note:** the *dir_path* is intentionally user-provided —
+    this is a local-first analysis tool where the user pastes the path
+    to their own data.  Only CSV files are parsed (via ``pd.read_csv``);
+    non-CSV content is silently skipped.
+    """
+    root = pathlib.Path(dir_path).expanduser().resolve()  # noqa: S108
+    if not root.is_dir():
+        return []
+
+    results: list[dict[str, Any]] = []
+    # Find DAD1A CSV files anywhere under *root* (case-insensitive).
+    dad1a_files = sorted(
+        p for p in root.rglob("*")
+        if p.is_file()
+        and "DAD1A" in p.stem.upper()
+        and p.suffix.lower() == ".csv"
+    )
+    for csv_path in dad1a_files:
+        df = read_two_col_csv(csv_path)
+        if df is None:
+            continue
+
+        # Walk up from the file's parent toward *root* looking for an AB
+        # identifier in any ancestor directory name.
+        ab_number: str | None = None
+        for ancestor in csv_path.relative_to(root).parents:
+            if ancestor.name:  # skip the empty root "."
+                ab_number = _extract_ab_number(ancestor.name)
+                if ab_number:
+                    break
+
+        fname = str(csv_path.relative_to(root))
+        label = ab_number or csv_path.parent.name
+        results.append({"filename": fname, "label": label, "df": df})
+
+    return results
 
 
 VIRIDIS_COLORS = [
@@ -141,46 +208,32 @@ st.title("Chromatography Peak Analysis")
 # ---- Sidebar ----
 with st.sidebar:
     st.header("Data")
-    uploaded_files = st.file_uploader(
-        "Upload all files from a sample directory "
-        "(the DAD1A file will be selected automatically)",
-        accept_multiple_files=True,
-        key="directory_uploader",
+
+    data_dir = st.text_input(
+        "Data directory (local path)",
+        value="",
+        help=(
+            "Paste the full path to the folder that contains your sample "
+            "subfolders (e.g. '/Users/you/Data/SequenceRun'). The app "
+            "recursively finds DAD1A CSV files and automatically labels "
+            "each one with the AB number from its parent folder name."
+        ),
     )
 
-    # Enable folder/directory selection in the browser file dialog.
-    # Streamlit's file_uploader does not natively support the
-    # ``webkitdirectory`` attribute, so we inject a small script that
-    # adds it to the rendered <input type="file"> element.  A
-    # MutationObserver is used to wait until the input element is
-    # present in the DOM before modifying it.
-    components.html(
-        """
-        <script>
-        function enableDirectoryUpload() {
-            const inputs = window.parent.document.querySelectorAll(
-                'section[data-testid="stFileUploadDropzone"] input[type=file]'
-            );
-            inputs.forEach(function(input) {
-                if (!input.hasAttribute('webkitdirectory')) {
-                    input.setAttribute('webkitdirectory', '');
-                    input.setAttribute('directory', '');
-                }
-            });
-            return inputs.length > 0;
-        }
-        if (!enableDirectoryUpload()) {
-            var observer = new MutationObserver(function() {
-                if (enableDirectoryUpload()) { observer.disconnect(); }
-            });
-            observer.observe(
-                window.parent.document.body,
-                {childList: true, subtree: true}
-            );
-        }
-        </script>
-        """,
-        height=0,
+    uploaded_files = st.file_uploader(
+        "— or upload CSV files directly",
+        accept_multiple_files=True,
+        type=["csv"],
+    )
+
+    sample_folder_name = st.text_input(
+        "Sample folder name (for uploaded files)",
+        value="",
+        help=(
+            "When uploading files, paste the sample folder name (e.g. "
+            "'20260424 151551SYSTEM_AB734_Auto2') so the AB number can "
+            "be extracted automatically."
+        ),
     )
 
     st.header("Technique")
@@ -221,7 +274,14 @@ with st.sidebar:
 # ---- Load data ----
 datasets: list[dict[str, Any]] = []
 
-if uploaded_files:
+# Priority 1: local directory path (reads filesystem directly, so all
+# ancestor folder names — including AB numbers — are available).
+if data_dir and data_dir.strip():
+    datasets = _scan_local_directory(data_dir.strip())
+
+# Priority 2: browser file upload (webkitRelativePath may only expose the
+# immediate parent .dx folder — not the AB-numbered grandparent).
+if not datasets and uploaded_files:
     # Separate files into DAD1A matches and others.
     dad1a_files = [uf for uf in uploaded_files if "DAD1A" in uf.name.upper()]
     other_csv_files = [
@@ -235,41 +295,44 @@ if uploaded_files:
     for uf in target_files:
         df = read_two_col_csv(uf)
         if df is not None:
-            # Try to find an AB-number (e.g. "AB734") from the
-            # file's path information and use it as the display name.
-            #
-            # Streamlit's UploadedFile does NOT have a
-            # ``webkitRelativePath`` attribute.  However, when the
-            # browser's folder picker (``webkitdirectory``) is used,
-            # the full relative path is typically encoded in
-            # ``uf.name`` (e.g. "AB734/2026-04-17…04.dx/DAD1A.csv").
-            # We therefore scan BOTH ``uf.name`` and the legacy
-            # ``webkitRelativePath`` (in case a future Streamlit
-            # version exposes it) for an AB-number in any ancestor
-            # directory component.
             rel_path: str = getattr(uf, "webkitRelativePath", "") or ""
-            ab_number = _extract_ab_number(rel_path) if rel_path else None
-            if ab_number is None:
-                ab_number = _extract_ab_number(uf.name)
+            parts = pathlib.PurePosixPath(rel_path).parts
+
+            # Try to extract an AB identifier from multiple sources:
+            #   1. The sample folder name typed/pasted by the user
+            #   2. All ancestor directories from webkitRelativePath
+            #   3. All path components from uf.name (folder picker
+            #      encodes the full relative path in the filename)
+            #   4. The filename itself
+            name_parts = pathlib.PurePosixPath(uf.name).parts
+            ab_number = _extract_ab_number(
+                sample_folder_name,
+                *parts[:-1],
+                *name_parts[:-1],
+                uf.name,
+            )
+
             if ab_number:
                 fname = ab_number
             else:
                 # No AB number found — fall back to the nearest
                 # parent directory name, or the bare filename.
-                # Check uf.name first (may contain path separators).
-                name_parts = pathlib.PurePosixPath(uf.name).parts
                 if len(name_parts) > 1:
-                    # uf.name has path components; use immediate parent dir
                     fname = name_parts[-2]
-                elif rel_path:
-                    parts = pathlib.PurePosixPath(rel_path).parts
-                    fname = parts[-2] if len(parts) > 1 else uf.name.rsplit(".", 1)[0]
+                elif len(parts) > 1:
+                    fname = parts[-2]
                 else:
                     fname = uf.name.rsplit(".", 1)[0]
-            datasets.append({"filename": fname, "label": fname, "df": df})
+
+            label = ab_number or fname
+            datasets.append({"filename": fname, "label": label, "df": df})
 
 if not datasets:
-    st.info("Upload at least one CSV file to begin analysis.")
+    st.info(
+        "Paste a local data directory path in the sidebar to automatically "
+        "find DAD1A files and label them with AB numbers, or upload CSV "
+        "files directly."
+    )
     st.stop()
 
 # ---- Nicknames ----
