@@ -11,6 +11,7 @@ from __future__ import annotations
 import io
 import json
 import pathlib
+import re
 from typing import Any
 
 import numpy as np
@@ -70,6 +71,26 @@ def _color_palette(n: int) -> list[str]:
         step = max(1, len(VIRIDIS_COLORS) // n)
         return [VIRIDIS_COLORS[i * step % len(VIRIDIS_COLORS)] for i in range(n)]
     return [VIRIDIS_COLORS[i % len(VIRIDIS_COLORS)] for i in range(n)]
+
+
+_AB_PATTERN = re.compile(r"^AB[\s\-_]?\d+", re.IGNORECASE)
+
+
+def _extract_ab_number(rel_path: str) -> str | None:
+    """Return the first AB-number found in any directory component of *rel_path*.
+
+    Scans every ancestor directory (from root toward the file) for a
+    component whose name starts with an AB-number pattern such as
+    ``AB734``, ``AB-1234``, or ``ab 42``.  Returns the matched prefix
+    (e.g. ``"AB734"``) or ``None`` when no match is found.
+    """
+    parts = pathlib.PurePosixPath(rel_path).parts
+    # Skip the last part (the filename itself); only look at directories.
+    for part in parts[:-1]:
+        m = _AB_PATTERN.match(part)
+        if m:
+            return m.group(0)
+    return None
 
 
 def _hex_to_rgba(hex_color: str, alpha: float = 0.15) -> str:
@@ -179,18 +200,22 @@ if uploaded_files:
         if df is not None:
             # When the browser supports directory upload the
             # UploadedFile may carry a ``webkitRelativePath``
-            # attribute containing the parent directory name
-            # (e.g. "SampleDir/DAD1A.csv").  Use it to build a
-            # descriptive filename; otherwise fall back to the
-            # bare filename.
+            # attribute containing the full relative path
+            # (e.g. "AB734/2026-04-17…04.dx/DAD1A.csv").
+            # Scan all ancestor directories for an AB-number
+            # and use it as the display name; fall back to the
+            # immediate parent directory or bare filename.
             rel_path: str = getattr(uf, "webkitRelativePath", "") or ""
-            parts = pathlib.PurePosixPath(rel_path).parts
-            if len(parts) > 1:
-                dir_name = parts[-2]
-                fname = f"{dir_name}_{uf.name}"
+            ab_number = _extract_ab_number(rel_path) if rel_path else None
+            if ab_number:
+                fname = ab_number
             else:
-                fname = uf.name
-            datasets.append({"filename": fname, "label": fname.rsplit(".", 1)[0], "df": df})
+                parts = pathlib.PurePosixPath(rel_path).parts
+                if len(parts) > 1:
+                    fname = parts[-2]
+                else:
+                    fname = uf.name.rsplit(".", 1)[0]
+            datasets.append({"filename": fname, "label": fname, "df": df})
 
 if not datasets:
     st.info("Upload at least one CSV file to begin analysis.")
