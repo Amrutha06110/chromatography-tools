@@ -16,7 +16,6 @@ from typing import Any
 import numpy as np
 import pandas as pd
 import streamlit as st
-import streamlit.components.v1 as components
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
@@ -121,49 +120,11 @@ st.title("Chromatography Peak Analysis")
 with st.sidebar:
     st.header("Data")
     uploaded_files = st.file_uploader(
-        "Select a folder to upload all files "
-        "(DAD1A files will be processed automatically)",
+        "Upload CSV files from a sample folder "
+        "(open the folder, select all files with ⌘A / Ctrl+A, "
+        "then click Open — DAD1A files are processed automatically)",
         accept_multiple_files=True,
-    )
-
-    # Inject JavaScript to convert the file uploader into a folder
-    # picker by adding the ``webkitdirectory`` and ``directory``
-    # attributes to its underlying <input type="file"> element.
-    # A MutationObserver ensures the attribute is applied even if the
-    # file input has not been rendered yet when the script first runs.
-    # The observer disconnects as soon as the attribute is successfully
-    # set, keeping resource usage minimal.
-    components.html(
-        """
-        <script>
-        (function() {
-            var applied = false;
-            function enableFolderUpload() {
-                var doc = window.parent.document;
-                var container = doc.querySelector(
-                    '[data-testid="stFileUploader"]'
-                );
-                if (!container) return;
-                var input = container.querySelector('input[type="file"]');
-                if (input && !input.hasAttribute('webkitdirectory')) {
-                    input.setAttribute('webkitdirectory', '');
-                    input.setAttribute('directory', '');
-                    applied = true;
-                }
-            }
-            enableFolderUpload();
-            if (!applied) {
-                var observer = new MutationObserver(function() {
-                    enableFolderUpload();
-                    if (applied) observer.disconnect();
-                });
-                observer.observe(window.parent.document.body,
-                                 {childList: true, subtree: true});
-            }
-        })();
-        </script>
-        """,
-        height=0,
+        type=["csv"],
     )
 
     st.header("Technique")
