@@ -44,20 +44,26 @@ TECHNIQUE_MAP: dict[str, type[BaseChromatogram]] = {
 # Helpers
 # ------------------------------------------------------------------
 
-_AB_PATTERN = re.compile(r"(AB\d+)", re.IGNORECASE)
+_AB_PATTERN = re.compile(r"(?<![A-Za-z])(AB[\s\-_]?\d+)", re.IGNORECASE)
 
 
 def _extract_ab_number(*sources: str) -> str | None:
     """Return the first ``AB<digits>`` token found in any of *sources*.
 
     Each source is a free-form string — it can be a filename, a folder
-    name, or a relative path.  Returns the uppercased identifier (e.g.
-    ``"AB734"``) on the first match, or ``None`` when nothing is found.
+    name, or a relative path.  Supports optional separators between
+    ``AB`` and the digits (e.g. ``AB734``, ``AB-734``, ``AB_734``).
+    Returns the normalised, uppercased identifier (e.g. ``"AB734"``)
+    on the first match, or ``None`` when nothing is found.
+
+    Sources are checked left-to-right, so callers should pass
+    higher-priority strings first.
     """
     for text in sources:
         m = _AB_PATTERN.search(text)
         if m:
-            return m.group(1).upper()
+            # Normalise: strip any separator between "AB" and the digits.
+            return re.sub(r"[\s\-_]", "", m.group(1)).upper()
     return None
 
 
@@ -75,6 +81,51 @@ def read_two_col_csv(uploaded_file: Any) -> pd.DataFrame | None:
     if df.empty:
         return None
     return df
+
+
+def _scan_local_directory(dir_path: str) -> list[dict[str, Any]]:
+    """Scan a local directory for ``DAD1A*.csv`` files and return datasets.
+
+    Each dataset dict has keys ``filename``, ``label``, and ``df``.  The
+    label is the AB identifier extracted from the file's ancestor
+    directories, falling back to the parent directory name.
+
+    **Security note:** the *dir_path* is intentionally user-provided —
+    this is a local-first analysis tool where the user pastes the path
+    to their own data.  Only CSV files are parsed (via ``pd.read_csv``);
+    non-CSV content is silently skipped.
+    """
+    root = pathlib.Path(dir_path).expanduser().resolve()  # noqa: S108
+    if not root.is_dir():
+        return []
+
+    results: list[dict[str, Any]] = []
+    # Find DAD1A CSV files anywhere under *root* (case-insensitive).
+    dad1a_files = sorted(
+        p for p in root.rglob("*")
+        if p.is_file()
+        and "DAD1A" in p.stem.upper()
+        and p.suffix.lower() == ".csv"
+    )
+    for csv_path in dad1a_files:
+        df = read_two_col_csv(csv_path)
+        if df is None:
+            continue
+
+        # Walk up from the file's parent toward *root* looking for an AB
+        # identifier in any ancestor directory name.
+        ab_number: str | None = None
+        for ancestor in csv_path.relative_to(root).parents:
+            if ancestor.name:  # skip the empty root "."
+                ab_number = _extract_ab_number(ancestor.name)
+                if ab_number:
+                    break
+
+        fname = str(csv_path.relative_to(root))
+        label = ab_number or csv_path.parent.name
+        results.append({"filename": fname, "label": label, "df": df})
+
+    return results
 
 
 VIRIDIS_COLORS = [
@@ -137,22 +188,31 @@ st.title("Chromatography Peak Analysis")
 # ---- Sidebar ----
 with st.sidebar:
     st.header("Data")
+
+    data_dir = st.text_input(
+        "Data directory (local path)",
+        value="",
+        help=(
+            "Paste the full path to the folder that contains your sample "
+            "subfolders (e.g. '/Users/you/Data/SequenceRun'). The app "
+            "recursively finds DAD1A CSV files and automatically labels "
+            "each one with the AB number from its parent folder name."
+        ),
+    )
+
     uploaded_files = st.file_uploader(
-        "Upload CSV files from a sample folder "
-        "(open the folder, select all files with ⌘A / Ctrl+A, "
-        "then click Open — DAD1A files are processed automatically)",
+        "— or upload CSV files directly",
         accept_multiple_files=True,
         type=["csv"],
     )
 
     sample_folder_name = st.text_input(
-        "Sample folder name",
+        "Sample folder name (for uploaded files)",
         value="",
         help=(
-            "Paste the name of the sample folder (e.g. "
-            "'20260424 151551SYSTEM_AB734_Auto2'). "
-            "The AB number is extracted automatically and used to "
-            "label the DAD1A chromatogram."
+            "When uploading files, paste the sample folder name (e.g. "
+            "'20260424 151551SYSTEM_AB734_Auto2') so the AB number can "
+            "be extracted automatically."
         ),
     )
 
@@ -194,7 +254,14 @@ with st.sidebar:
 # ---- Load data ----
 datasets: list[dict[str, Any]] = []
 
-if uploaded_files:
+# Priority 1: local directory path (reads filesystem directly, so all
+# ancestor folder names — including AB numbers — are available).
+if data_dir and data_dir.strip():
+    datasets = _scan_local_directory(data_dir.strip())
+
+# Priority 2: browser file upload (webkitRelativePath may only expose the
+# immediate parent .dx folder — not the AB-numbered grandparent).
+if not datasets and uploaded_files:
     # Separate files into DAD1A matches and others.
     dad1a_files = [uf for uf in uploaded_files if "DAD1A" in uf.name.upper()]
     other_csv_files = [
@@ -208,12 +275,6 @@ if uploaded_files:
     for uf in target_files:
         df = read_two_col_csv(uf)
         if df is not None:
-            # When the browser supports directory upload the
-            # UploadedFile may carry a ``webkitRelativePath``
-            # attribute containing the full relative path
-            # (e.g. "AB734/2026-04-17…dx/DAD1A.csv").  Use it
-            # to build a descriptive filename and to locate the
-            # AB identifier in *any* ancestor directory.
             rel_path: str = getattr(uf, "webkitRelativePath", "") or ""
             parts = pathlib.PurePosixPath(rel_path).parts
             if len(parts) > 1:
@@ -222,22 +283,20 @@ if uploaded_files:
             else:
                 fname = uf.name
 
-            # Try to extract an AB identifier (e.g. "AB734") for this
-            # specific file, checking multiple sources in priority order:
-            #   1. The sample folder name typed/pasted by the user
-            #   2. All ancestor directories from webkitRelativePath
-            #      (the AB number may be in a grandparent folder)
-            #   3. The filename itself
             ab_number = _extract_ab_number(
                 sample_folder_name,
-                *parts[:-1],   # all directory components of the path
+                *parts[:-1],
                 uf.name,
             )
             label = ab_number or fname.rsplit(".", 1)[0]
             datasets.append({"filename": fname, "label": label, "df": df})
 
 if not datasets:
-    st.info("Upload at least one CSV file to begin analysis.")
+    st.info(
+        "Paste a local data directory path in the sidebar to automatically "
+        "find DAD1A files and label them with AB numbers, or upload CSV "
+        "files directly."
+    )
     st.stop()
 
 # ---- Nicknames ----
