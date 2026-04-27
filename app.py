@@ -198,21 +198,35 @@ if uploaded_files:
     for uf in target_files:
         df = read_two_col_csv(uf)
         if df is not None:
-            # When the browser supports directory upload the
-            # UploadedFile may carry a ``webkitRelativePath``
-            # attribute containing the full relative path
-            # (e.g. "AB734/2026-04-17…04.dx/DAD1A.csv").
-            # Scan all ancestor directories for an AB-number
-            # and use it as the display name; fall back to the
-            # immediate parent directory or bare filename.
+            # Try to find an AB-number (e.g. "AB734") from the
+            # file's path information and use it as the display name.
+            #
+            # Streamlit's UploadedFile does NOT have a
+            # ``webkitRelativePath`` attribute.  However, when the
+            # browser's folder picker (``webkitdirectory``) is used,
+            # the full relative path is typically encoded in
+            # ``uf.name`` (e.g. "AB734/2026-04-17…04.dx/DAD1A.csv").
+            # We therefore scan BOTH ``uf.name`` and the legacy
+            # ``webkitRelativePath`` (in case a future Streamlit
+            # version exposes it) for an AB-number in any ancestor
+            # directory component.
             rel_path: str = getattr(uf, "webkitRelativePath", "") or ""
             ab_number = _extract_ab_number(rel_path) if rel_path else None
+            if ab_number is None:
+                ab_number = _extract_ab_number(uf.name)
             if ab_number:
                 fname = ab_number
             else:
-                parts = pathlib.PurePosixPath(rel_path).parts
-                if len(parts) > 1:
-                    fname = parts[-2]
+                # No AB number found — fall back to the nearest
+                # parent directory name, or the bare filename.
+                # Check uf.name first (may contain path separators).
+                name_parts = pathlib.PurePosixPath(uf.name).parts
+                if len(name_parts) > 1:
+                    # uf.name has path components; use immediate parent dir
+                    fname = name_parts[-2]
+                elif rel_path:
+                    parts = pathlib.PurePosixPath(rel_path).parts
+                    fname = parts[-2] if len(parts) > 1 else uf.name.rsplit(".", 1)[0]
                 else:
                     fname = uf.name.rsplit(".", 1)[0]
             datasets.append({"filename": fname, "label": fname, "df": df})
