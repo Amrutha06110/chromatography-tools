@@ -47,16 +47,15 @@ TECHNIQUE_MAP: dict[str, type[BaseChromatogram]] = {
 _AB_PATTERN = re.compile(r"(AB\d+)", re.IGNORECASE)
 
 
-def _extract_ab_number(filenames: list[str]) -> str | None:
-    """Return the first ``AB<digits>`` token found in any of *filenames*.
+def _extract_ab_number(*sources: str) -> str | None:
+    """Return the first ``AB<digits>`` token found in any of *sources*.
 
-    Scans every uploaded filename so that the AB identifier can be
-    derived even from sibling files (e.g. ``DAD1B``) that were selected
-    alongside the ``DAD1A`` file.  Returns ``None`` when no match is
-    found.
+    Each source is a free-form string — it can be a filename, a folder
+    name, or a relative path.  Returns the uppercased identifier (e.g.
+    ``"AB734"``) on the first match, or ``None`` when nothing is found.
     """
-    for name in filenames:
-        m = _AB_PATTERN.search(name)
+    for text in sources:
+        m = _AB_PATTERN.search(text)
         if m:
             return m.group(1).upper()
     return None
@@ -146,6 +145,17 @@ with st.sidebar:
         type=["csv"],
     )
 
+    sample_folder_name = st.text_input(
+        "Sample folder name",
+        value="",
+        help=(
+            "Paste the name of the sample folder (e.g. "
+            "'20260424 151551SYSTEM_AB734_Auto2'). "
+            "The AB number is extracted automatically and used to "
+            "label the DAD1A chromatogram."
+        ),
+    )
+
     st.header("Technique")
     technique = st.selectbox(
         "Chromatography type",
@@ -192,9 +202,23 @@ if uploaded_files:
         if "DAD1A" not in uf.name.upper() and uf.name.lower().endswith(".csv")
     ]
 
-    # Try to extract an AB identifier (e.g. "AB734") from any of the
-    # uploaded filenames so DAD1A files can be labelled automatically.
-    ab_number = _extract_ab_number([uf.name for uf in uploaded_files])
+    # Try to extract an AB identifier (e.g. "AB734") from multiple
+    # sources, in priority order:
+    #   1. The sample folder name typed/pasted by the user
+    #   2. The webkitRelativePath directory component (when the browser
+    #      exposes it)
+    #   3. Any of the uploaded filenames themselves
+    rel_paths = [getattr(uf, "webkitRelativePath", "") or "" for uf in uploaded_files]
+    dir_names = [
+        pathlib.PurePosixPath(rp).parts[-2]
+        for rp in rel_paths
+        if len(pathlib.PurePosixPath(rp).parts) > 1
+    ]
+    ab_number = _extract_ab_number(
+        sample_folder_name,
+        *dir_names,
+        *[uf.name for uf in uploaded_files],
+    )
 
     # Prefer the DAD1A file; fall back to all CSVs when none is found.
     target_files = dad1a_files if dad1a_files else other_csv_files
