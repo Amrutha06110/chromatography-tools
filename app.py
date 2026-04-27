@@ -202,24 +202,6 @@ if uploaded_files:
         if "DAD1A" not in uf.name.upper() and uf.name.lower().endswith(".csv")
     ]
 
-    # Try to extract an AB identifier (e.g. "AB734") from multiple
-    # sources, in priority order:
-    #   1. The sample folder name typed/pasted by the user
-    #   2. The webkitRelativePath directory component (when the browser
-    #      exposes it)
-    #   3. Any of the uploaded filenames themselves
-    rel_paths = [getattr(uf, "webkitRelativePath", "") or "" for uf in uploaded_files]
-    dir_names = [
-        pathlib.PurePosixPath(rp).parts[-2]
-        for rp in rel_paths
-        if len(pathlib.PurePosixPath(rp).parts) > 1
-    ]
-    ab_number = _extract_ab_number(
-        sample_folder_name,
-        *dir_names,
-        *[uf.name for uf in uploaded_files],
-    )
-
     # Prefer the DAD1A file; fall back to all CSVs when none is found.
     target_files = dad1a_files if dad1a_files else other_csv_files
 
@@ -228,10 +210,10 @@ if uploaded_files:
         if df is not None:
             # When the browser supports directory upload the
             # UploadedFile may carry a ``webkitRelativePath``
-            # attribute containing the parent directory name
-            # (e.g. "SampleDir/DAD1A.csv").  Use it to build a
-            # descriptive filename; otherwise fall back to the
-            # bare filename.
+            # attribute containing the full relative path
+            # (e.g. "AB734/2026-04-17…dx/DAD1A.csv").  Use it
+            # to build a descriptive filename and to locate the
+            # AB identifier in *any* ancestor directory.
             rel_path: str = getattr(uf, "webkitRelativePath", "") or ""
             parts = pathlib.PurePosixPath(rel_path).parts
             if len(parts) > 1:
@@ -240,9 +222,17 @@ if uploaded_files:
             else:
                 fname = uf.name
 
-            # Build label: prefer the AB number when available so the
-            # chromatogram is shown as e.g. "AB734" instead of the raw
-            # filename.
+            # Try to extract an AB identifier (e.g. "AB734") for this
+            # specific file, checking multiple sources in priority order:
+            #   1. The sample folder name typed/pasted by the user
+            #   2. All ancestor directories from webkitRelativePath
+            #      (the AB number may be in a grandparent folder)
+            #   3. The filename itself
+            ab_number = _extract_ab_number(
+                sample_folder_name,
+                *parts[:-1],   # all directory components of the path
+                uf.name,
+            )
             label = ab_number or fname.rsplit(".", 1)[0]
             datasets.append({"filename": fname, "label": label, "df": df})
 
