@@ -11,6 +11,7 @@ from __future__ import annotations
 import io
 import json
 import pathlib
+import re
 from typing import Any
 
 import numpy as np
@@ -42,6 +43,24 @@ TECHNIQUE_MAP: dict[str, type[BaseChromatogram]] = {
 # ------------------------------------------------------------------
 # Helpers
 # ------------------------------------------------------------------
+
+_AB_PATTERN = re.compile(r"(AB\d+)", re.IGNORECASE)
+
+
+def _extract_ab_number(filenames: list[str]) -> str | None:
+    """Return the first ``AB<digits>`` token found in any of *filenames*.
+
+    Scans every uploaded filename so that the AB identifier can be
+    derived even from sibling files (e.g. ``DAD1B``) that were selected
+    alongside the ``DAD1A`` file.  Returns ``None`` when no match is
+    found.
+    """
+    for name in filenames:
+        m = _AB_PATTERN.search(name)
+        if m:
+            return m.group(1).upper()
+    return None
+
 
 def read_two_col_csv(uploaded_file: Any) -> pd.DataFrame | None:
     """Read a 2-column CSV into a ``time`` / ``intensity`` DataFrame."""
@@ -173,6 +192,10 @@ if uploaded_files:
         if "DAD1A" not in uf.name.upper() and uf.name.lower().endswith(".csv")
     ]
 
+    # Try to extract an AB identifier (e.g. "AB734") from any of the
+    # uploaded filenames so DAD1A files can be labelled automatically.
+    ab_number = _extract_ab_number([uf.name for uf in uploaded_files])
+
     # Prefer the DAD1A file; fall back to all CSVs when none is found.
     target_files = dad1a_files if dad1a_files else other_csv_files
 
@@ -192,7 +215,15 @@ if uploaded_files:
                 fname = f"{dir_name}_{uf.name}"
             else:
                 fname = uf.name
-            datasets.append({"filename": fname, "label": fname.rsplit(".", 1)[0], "df": df})
+
+            # Build label: prefer the AB number when available so the
+            # chromatogram is shown as e.g. "AB734" instead of the raw
+            # filename.
+            if ab_number:
+                label = ab_number
+            else:
+                label = fname.rsplit(".", 1)[0]
+            datasets.append({"filename": fname, "label": label, "df": df})
 
 if not datasets:
     st.info("Upload at least one CSV file to begin analysis.")
