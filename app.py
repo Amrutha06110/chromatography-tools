@@ -219,10 +219,7 @@ if uploaded_files:
             # Build label: prefer the AB number when available so the
             # chromatogram is shown as e.g. "AB734" instead of the raw
             # filename.
-            if ab_number:
-                label = ab_number
-            else:
-                label = fname.rsplit(".", 1)[0]
+            label = ab_number or fname.rsplit(".", 1)[0]
             datasets.append({"filename": fname, "label": label, "df": df})
 
 if not datasets:
