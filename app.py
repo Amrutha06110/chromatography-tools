@@ -141,6 +141,26 @@ def _color_palette(n: int) -> list[str]:
     return [VIRIDIS_COLORS[i % len(VIRIDIS_COLORS)] for i in range(n)]
 
 
+_AB_PATTERN = re.compile(r"^AB[\s\-_]?\d+", re.IGNORECASE)
+
+
+def _extract_ab_number(rel_path: str) -> str | None:
+    """Return the first AB-number found in any directory component of *rel_path*.
+
+    Scans every ancestor directory (from root toward the file) for a
+    component whose name starts with an AB-number pattern such as
+    ``AB734``, ``AB-1234``, or ``ab 42``.  Returns the matched prefix
+    (e.g. ``"AB734"``) or ``None`` when no match is found.
+    """
+    parts = pathlib.PurePosixPath(rel_path).parts
+    # Skip the last part (the filename itself); only look at directories.
+    for part in parts[:-1]:
+        m = _AB_PATTERN.match(part)
+        if m:
+            return m.group(0)
+    return None
+
+
 def _hex_to_rgba(hex_color: str, alpha: float = 0.15) -> str:
     """Convert a hex color string to an rgba() string with the given alpha."""
     h = hex_color.lstrip("#")
@@ -277,18 +297,34 @@ if not datasets and uploaded_files:
         if df is not None:
             rel_path: str = getattr(uf, "webkitRelativePath", "") or ""
             parts = pathlib.PurePosixPath(rel_path).parts
-            if len(parts) > 1:
-                dir_name = parts[-2]
-                fname = f"{dir_name}_{uf.name}"
-            else:
-                fname = uf.name
 
+            # Try to extract an AB identifier from multiple sources:
+            #   1. The sample folder name typed/pasted by the user
+            #   2. All ancestor directories from webkitRelativePath
+            #   3. All path components from uf.name (folder picker
+            #      encodes the full relative path in the filename)
+            #   4. The filename itself
+            name_parts = pathlib.PurePosixPath(uf.name).parts
             ab_number = _extract_ab_number(
                 sample_folder_name,
                 *parts[:-1],
+                *name_parts[:-1],
                 uf.name,
             )
-            label = ab_number or fname.rsplit(".", 1)[0]
+
+            if ab_number:
+                fname = ab_number
+            else:
+                # No AB number found — fall back to the nearest
+                # parent directory name, or the bare filename.
+                if len(name_parts) > 1:
+                    fname = name_parts[-2]
+                elif len(parts) > 1:
+                    fname = parts[-2]
+                else:
+                    fname = uf.name.rsplit(".", 1)[0]
+
+            label = ab_number or fname
             datasets.append({"filename": fname, "label": label, "df": df})
 
 if not datasets:
