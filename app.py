@@ -289,11 +289,11 @@ if not datasets and uploaded_files:
         if "DAD1A" not in uf.name.upper() and uf.name.lower().endswith(".csv")
     ]
 
-    # Show DAD1A filter status message.
-    st.info(f"Found {len(dad1a_files)} DAD1A file(s) from {len(uploaded_files)} total file(s) uploaded.")
-
     # Prefer the DAD1A file; fall back to all CSVs when none is found.
     target_files = dad1a_files if dad1a_files else other_csv_files
+
+    # Show DAD1A filter status message.
+    st.info(f"Found {len(dad1a_files)} DAD1A file(s) from {len(uploaded_files)} total file(s) uploaded.")
 
     # First pass: extract AB numbers and build preview data.
     preview_rows: list[dict[str, Any]] = []
@@ -376,7 +376,7 @@ if not datasets and uploaded_files:
         else:
             final_label = label
         datasets.append({
-            "filename": row["fname"] if label_counts[label] <= 1 else final_label,
+            "filename": final_label,
             "label": final_label,
             "df": row["df"],
         })
