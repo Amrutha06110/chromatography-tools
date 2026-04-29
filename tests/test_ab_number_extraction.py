@@ -143,3 +143,41 @@ class TestResolveLabel:
         label = _resolve_label("lab/AB42/run1/2026-04-17.dx/DAD1A.CSV")
         assert label == "AB42"
 
+
+class TestDuplicateAbNumberHandling:
+    """Validate that duplicate AB numbers get counter suffixes."""
+
+    def _resolve_duplicates(self, labels: list[str]) -> list[str]:
+        """Replicate the duplicate-handling logic from app.py."""
+        label_counts: dict[str, int] = {}
+        for label in labels:
+            label_counts[label] = label_counts.get(label, 0) + 1
+
+        label_seen: dict[str, int] = {}
+        final_labels: list[str] = []
+        for label in labels:
+            if label_counts[label] > 1:
+                label_seen[label] = label_seen.get(label, 0) + 1
+                final_labels.append(f"{label}_{label_seen[label]}")
+            else:
+                final_labels.append(label)
+        return final_labels
+
+    def test_no_duplicates(self):
+        """Unique labels remain unchanged."""
+        assert self._resolve_duplicates(["AB100", "AB200"]) == ["AB100", "AB200"]
+
+    def test_two_duplicates(self):
+        """Two identical labels get _1 and _2 suffixes."""
+        assert self._resolve_duplicates(["AB100", "AB100"]) == ["AB100_1", "AB100_2"]
+
+    def test_three_duplicates(self):
+        """Three identical labels get _1, _2, _3 suffixes."""
+        result = self._resolve_duplicates(["AB42", "AB42", "AB42"])
+        assert result == ["AB42_1", "AB42_2", "AB42_3"]
+
+    def test_mixed_duplicates_and_unique(self):
+        """Mix of unique and duplicate labels handled correctly."""
+        result = self._resolve_duplicates(["AB100", "AB200", "AB100", "AB300"])
+        assert result == ["AB100_1", "AB200", "AB100_2", "AB300"]
+
