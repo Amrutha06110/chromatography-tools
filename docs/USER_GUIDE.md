@@ -23,17 +23,9 @@ You will see the landing page with the sidebar controls on the left and a prompt
 
 ## Step 2 — Load Your Data
 
-There are two ways to load data:
+To load data, paste the full path to the folder containing your sample subfolders in the **Data directory (local path)** text input in the sidebar. The app recursively finds DAD1A CSV files and automatically labels each one with the AB number extracted from its parent folder name.
 
-### Option A — Paste a local directory path
-1. In the **Data** section of the sidebar, paste the full path to the folder containing your sample subfolders.
-2. The app recursively finds DAD1A CSV files and automatically labels each one with the AB number from its parent folder name.
-
-### Option B — Select an experiment folder
-1. Click the **📁 Select Experiment Folder** button in the sidebar.
-2. A native OS folder picker dialog opens — select the experiment folder (e.g. `20260424 151551SYSTEM (SYSTEM)AB628`).
-3. The app extracts the AB number from the folder name and finds all DAD1A CSV files inside.
-4. Each file is automatically labelled with the AB number as its nickname.
+For example, pasting `/Users/you/Data/20260424 151551SYSTEM (SYSTEM)AB628` will detect the AB number `AB628` and load all DAD1A CSV files found inside.
 
 > **Tip:** Two demo files (`TestFile.CSV`, `TestFile2.CSV`) are included in the `tests/` folder for quick testing.
 
