@@ -183,9 +183,9 @@ class TestDuplicateAbNumberHandling:
 
 
 class TestExtractAbNumberFromFolderName:
-    """Validate the folder-name-based AB extraction used by the tkinter picker.
+    """Validate the folder-name-based AB extraction.
 
-    This mirrors the ``extract_ab_number()`` function in ``app.py`` which
+    This mirrors the ``_extract_ab_number()`` helper in ``app.py`` which
     searches for the pattern ``AB<digits>`` anywhere in a folder name string.
     """
 
