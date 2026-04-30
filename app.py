@@ -277,7 +277,7 @@ if data_dir and data_dir.strip():
 # so the AB number can be extracted directly from the parent folder name).
 if not datasets:
     folder_path = st.session_state.get("chrom_folder_path", None)
-    if folder_path:
+    if folder_path and os.path.isdir(folder_path):
         folder_name = os.path.basename(folder_path)
         ab_number = extract_ab_number(folder_name)
 
