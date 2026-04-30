@@ -181,3 +181,53 @@ class TestDuplicateAbNumberHandling:
         result = self._resolve_duplicates(["AB100", "AB200", "AB100", "AB300"])
         assert result == ["AB100_1", "AB200", "AB100_2", "AB300"]
 
+
+class TestExtractAbNumberFromFolderName:
+    """Validate the folder-name-based AB extraction used by the tkinter picker.
+
+    This mirrors the ``extract_ab_number()`` function in ``app.py`` which
+    searches for the pattern ``AB<digits>`` anywhere in a folder name string.
+    """
+
+    @staticmethod
+    def _extract(folder_name: str) -> str | None:
+        """Replicate extract_ab_number from app.py."""
+        match = re.search(r"AB\d+", folder_name, re.IGNORECASE)
+        return match.group(0).upper() if match else None
+
+    def test_typical_agilent_folder_name(self):
+        """Standard Agilent folder: '20260424 151551SYSTEM (SYSTEM)AB628'."""
+        assert self._extract("20260424 151551SYSTEM (SYSTEM)AB628") == "AB628"
+
+    def test_ab_number_at_start(self):
+        """AB number at the beginning of the folder name."""
+        assert self._extract("AB734_experiment_data") == "AB734"
+
+    def test_ab_number_in_middle(self):
+        """AB number embedded in the middle of the folder name."""
+        assert self._extract("2026_AB99_run1") == "AB99"
+
+    def test_lowercase_ab(self):
+        """Lowercase 'ab' should be matched and uppercased."""
+        assert self._extract("data_ab500_results") == "AB500"
+
+    def test_no_ab_number(self):
+        """Folder with no AB number returns None."""
+        assert self._extract("20260424 151551SYSTEM (SYSTEM)") is None
+
+    def test_empty_string(self):
+        """Empty folder name returns None."""
+        assert self._extract("") is None
+
+    def test_first_ab_number_wins(self):
+        """When multiple AB numbers exist, the first one is returned."""
+        assert self._extract("AB100_rerun_AB200") == "AB100"
+
+    def test_ab_without_digits(self):
+        """'AB' without digits should not match."""
+        assert self._extract("AB_only_text") is None
+
+    def test_large_ab_number(self):
+        """Large AB number with many digits."""
+        assert self._extract("folder_AB123456_data") == "AB123456"
+

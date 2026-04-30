@@ -10,8 +10,11 @@ from __future__ import annotations
 
 import io
 import json
+import os
 import pathlib
 import re
+import tkinter as tk
+from tkinter import filedialog
 from typing import Any
 
 import numpy as np
@@ -65,6 +68,28 @@ def _extract_ab_number(*sources: str) -> str | None:
             # Normalise: strip any separator between "AB" and the digits.
             return re.sub(r"[\s\-_]", "", m.group(1)).upper()
     return None
+
+
+def pick_folder() -> str:
+    """Open a native OS folder picker dialog and return the selected path."""
+    root = tk.Tk()
+    root.withdraw()
+    root.wm_attributes("-topmost", True)
+    folder_path = filedialog.askdirectory(title="Select experiment folder")
+    root.destroy()
+    return folder_path
+
+
+def extract_ab_number(folder_name: str) -> str | None:
+    """Extract an AB<digits> identifier from a folder name string.
+
+    The folder name format is typically something like
+    ``"20260424 151551SYSTEM (SYSTEM)AB628"``.
+    Returns the normalised, uppercased identifier (e.g. ``"AB628"``),
+    or ``None`` when no match is found.
+    """
+    match = re.search(r"AB\d+", folder_name, re.IGNORECASE)
+    return match.group(0).upper() if match else None
 
 
 def read_two_col_csv(uploaded_file: Any) -> pd.DataFrame | None:
@@ -200,21 +225,10 @@ with st.sidebar:
         ),
     )
 
-    uploaded_files = st.file_uploader(
-        "Upload folder contents (select all files inside the folder)",
-        accept_multiple_files=True,
-        type=["csv"],
-    )
-
-    sample_folder_name = st.text_input(
-        "Sample folder name (for uploaded files)",
-        value="",
-        help=(
-            "When uploading files, paste the sample folder name (e.g. "
-            "'20260424 151551SYSTEM_AB734_Auto2') so the AB number can "
-            "be extracted automatically."
-        ),
-    )
+    if st.button("📁 Select Experiment Folder"):
+        folder_path = pick_folder()
+        if folder_path:
+            st.session_state["chrom_folder_path"] = folder_path
 
     st.header("Technique")
     technique = st.selectbox(
@@ -259,113 +273,72 @@ datasets: list[dict[str, Any]] = []
 if data_dir and data_dir.strip():
     datasets = _scan_local_directory(data_dir.strip())
 
-# Priority 2: browser file upload (webkitRelativePath may only expose the
-# immediate parent .dx folder — not the AB-numbered grandparent).
-if not datasets and uploaded_files:
-    # Separate files into DAD1A matches and others.
-    dad1a_files = [uf for uf in uploaded_files if "DAD1A" in uf.name.upper()]
-    other_csv_files = [
-        uf for uf in uploaded_files
-        if "DAD1A" not in uf.name.upper() and uf.name.lower().endswith(".csv")
-    ]
+# Priority 2: tkinter folder picker (native OS dialog gives full path,
+# so the AB number can be extracted directly from the parent folder name).
+if not datasets:
+    folder_path = st.session_state.get("chrom_folder_path", None)
+    if folder_path:
+        folder_name = os.path.basename(folder_path)
+        ab_number = extract_ab_number(folder_name)
 
-    # Prefer the DAD1A file; fall back to all CSVs when none is found.
-    target_files = dad1a_files if dad1a_files else other_csv_files
-
-    # Show DAD1A filter status message.
-    st.info(f"Found {len(dad1a_files)} DAD1A file(s) from {len(uploaded_files)} total file(s) uploaded.")
-
-    # First pass: extract AB numbers and build preview data.
-    preview_rows: list[dict[str, Any]] = []
-    for uf in target_files:
-        df = read_two_col_csv(uf)
-        if df is not None:
-            rel_path: str = getattr(uf, "webkitRelativePath", "") or ""
-            parts = pathlib.PurePosixPath(rel_path).parts
-
-            # Try to extract an AB identifier from multiple sources:
-            #   1. The sample folder name typed/pasted by the user
-            #   2. All ancestor directories from webkitRelativePath
-            #   3. All path components from uf.name (folder picker
-            #      encodes the full relative path in the filename)
-            #   4. The filename itself
-            name_parts = pathlib.PurePosixPath(uf.name).parts
-            ab_number = _extract_ab_number(
-                sample_folder_name,
-                *parts[:-1],
-                *name_parts[:-1],
-                uf.name,
-            )
-
-            if ab_number:
-                fname = ab_number
-            else:
-                # No AB number found — fall back to the nearest
-                # parent directory name, or the bare filename.
-                if len(name_parts) > 1:
-                    fname = name_parts[-2]
-                elif len(parts) > 1:
-                    fname = parts[-2]
-                else:
-                    fname = uf.name.rsplit(".", 1)[0]
-
-            preview_rows.append({
-                "file_name": uf.name,
-                "fname": fname,
-                "ab_number": ab_number,
-                "df": df,
-            })
-
-    # Show preview table so the user can confirm nicknames.
-    if preview_rows:
-        preview_df = pd.DataFrame([
-            {
-                "File name": row["file_name"],
-                "Nickname (AB number)": row["ab_number"] or "—",
-                "Status": "Auto-detected" if row["ab_number"] else "Enter manually",
-            }
-            for row in preview_rows
-        ])
-        st.subheader("Upload Preview")
-        st.dataframe(preview_df, use_container_width=True, hide_index=True)
-
-    # Allow manual entry for files without an auto-detected AB number.
-    for row in preview_rows:
-        if not row["ab_number"]:
-            manual_nick = st.text_input(
-                f"Enter nickname for {row['file_name']}",
-                value="",
-                key=f"manual_nick_{row['file_name']}",
-            )
-            if manual_nick.strip():
-                row["ab_number"] = manual_nick.strip()
-                row["fname"] = manual_nick.strip()
-
-    # Resolve duplicate AB numbers by appending a counter.
-    label_counts: dict[str, int] = {}
-    for row in preview_rows:
-        label = row["ab_number"] or row["fname"]
-        label_counts[label] = label_counts.get(label, 0) + 1
-
-    label_seen: dict[str, int] = {}
-    for row in preview_rows:
-        label = row["ab_number"] or row["fname"]
-        if label_counts[label] > 1:
-            label_seen[label] = label_seen.get(label, 0) + 1
-            final_label = f"{label}_{label_seen[label]}"
+        if ab_number:
+            st.success(f"Folder: `{folder_name}` → AB number: **{ab_number}**")
         else:
-            final_label = label
-        datasets.append({
-            "filename": final_label,
-            "label": final_label,
-            "df": row["df"],
-        })
+            st.warning(f"No AB number found in folder name: `{folder_name}`")
+            ab_number = folder_name  # fall back to full folder name
+
+        # Find all DAD1A CSV files inside the folder
+        all_files = os.listdir(folder_path)
+        dad1a_paths = sorted([
+            os.path.join(folder_path, f)
+            for f in all_files
+            if "DAD1A" in f.upper() and f.lower().endswith(".csv")
+        ])
+
+        st.info(
+            f"Found **{len(dad1a_paths)}** DAD1A file(s) out of "
+            f"{len(all_files)} total file(s) in folder."
+        )
+
+        if not dad1a_paths:
+            st.error("No DAD1A CSV files found in this folder.")
+        else:
+            # Assign nickname: AB number + counter if multiple DAD1A files
+            nicknames: dict[str, str] = {}
+            for i, path in enumerate(dad1a_paths):
+                fname = os.path.basename(path)
+                nicknames[fname] = (
+                    ab_number if len(dad1a_paths) == 1
+                    else f"{ab_number}_{i + 1}"
+                )
+
+            # Show preview table
+            preview = pd.DataFrame([
+                {
+                    "File": os.path.basename(p),
+                    "Nickname": nicknames[os.path.basename(p)],
+                }
+                for p in dad1a_paths
+            ])
+            st.dataframe(preview, use_container_width=True, hide_index=True)
+
+            # Load each DAD1A file using the existing CSV parsing function
+            for path in dad1a_paths:
+                fname = os.path.basename(path)
+                nickname = nicknames[fname]
+                df = read_two_col_csv(path)
+                if df is not None:
+                    datasets.append({
+                        "filename": nickname,
+                        "label": nickname,
+                        "df": df,
+                    })
 
 if not datasets:
     st.info(
         "Paste a local data directory path in the sidebar to automatically "
-        "find DAD1A files and label them with AB numbers, or upload CSV "
-        "files directly."
+        "find DAD1A files and label them with AB numbers, or click "
+        "'📁 Select Experiment Folder' to pick a folder."
     )
     st.stop()
 
