@@ -13,8 +13,6 @@ import json
 import os
 import pathlib
 import re
-import tkinter as tk
-from tkinter import filedialog
 from typing import Any
 
 import numpy as np
@@ -72,6 +70,16 @@ def _extract_ab_number(*sources: str) -> str | None:
 
 def pick_folder() -> str:
     """Open a native OS folder picker dialog and return the selected path."""
+    try:
+        import tkinter as tk
+        from tkinter import filedialog
+    except ImportError:
+        st.error(
+            "Native folder picker is not available because `tkinter` is not "
+            "installed. Please type or paste the folder path in the sidebar "
+            "text input instead."
+        )
+        return ""
     root = tk.Tk()
     root.withdraw()
     root.wm_attributes("-topmost", True)
