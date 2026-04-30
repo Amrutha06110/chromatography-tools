@@ -21,6 +21,12 @@ import streamlit as st
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
+try:
+    import tkinter  # noqa: F401
+    _HAS_TKINTER = True
+except ImportError:
+    _HAS_TKINTER = False
+
 from chromatography.core import (
     BaseChromatogram,
     GCChromatogram,
@@ -69,17 +75,13 @@ def _extract_ab_number(*sources: str) -> str | None:
 
 
 def pick_folder() -> str:
-    """Open a native OS folder picker dialog and return the selected path."""
-    try:
-        import tkinter as tk
-        from tkinter import filedialog
-    except ImportError:
-        st.error(
-            "Native folder picker is not available because `tkinter` is not "
-            "available in this environment. Please type or paste the folder path in the sidebar "
-            "text input instead."
-        )
-        return ""
+    """Open a native OS folder picker dialog and return the selected path.
+
+    Only call this when ``_HAS_TKINTER`` is ``True``.
+    """
+    import tkinter as tk
+    from tkinter import filedialog
+
     root = tk.Tk()
     root.withdraw()
     root.wm_attributes("-topmost", True)
@@ -233,10 +235,11 @@ with st.sidebar:
         ),
     )
 
-    if st.button("📁 Select Experiment Folder"):
-        folder_path = pick_folder()
-        if folder_path:
-            st.session_state["chrom_folder_path"] = folder_path
+    if _HAS_TKINTER:
+        if st.button("📁 Select Experiment Folder"):
+            folder_path = pick_folder()
+            if folder_path:
+                st.session_state["chrom_folder_path"] = folder_path
 
     st.header("Technique")
     technique = st.selectbox(
@@ -343,11 +346,15 @@ if not datasets:
                     })
 
 if not datasets:
-    st.info(
+    _hint = (
         "Paste a local data directory path in the sidebar to automatically "
-        "find DAD1A files and label them with AB numbers, or click "
-        "'📁 Select Experiment Folder' to pick a folder."
+        "find DAD1A files and label them with AB numbers"
     )
+    if _HAS_TKINTER:
+        _hint += ", or click '📁 Select Experiment Folder' to pick a folder."
+    else:
+        _hint += "."
+    st.info(_hint)
     st.stop()
 
 # ---- Nicknames ----
