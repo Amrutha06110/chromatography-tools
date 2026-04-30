@@ -76,7 +76,7 @@ def pick_folder() -> str:
     except ImportError:
         st.error(
             "Native folder picker is not available because `tkinter` is not "
-            "installed. Please type or paste the folder path in the sidebar "
+            "available in this environment. Please type or paste the folder path in the sidebar "
             "text input instead."
         )
         return ""
