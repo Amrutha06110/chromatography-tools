@@ -141,26 +141,6 @@ def _color_palette(n: int) -> list[str]:
     return [VIRIDIS_COLORS[i % len(VIRIDIS_COLORS)] for i in range(n)]
 
 
-_AB_PATTERN = re.compile(r"^AB[\s\-_]?\d+", re.IGNORECASE)
-
-
-def _extract_ab_number(rel_path: str) -> str | None:
-    """Return the first AB-number found in any directory component of *rel_path*.
-
-    Scans every ancestor directory (from root toward the file) for a
-    component whose name starts with an AB-number pattern such as
-    ``AB734``, ``AB-1234``, or ``ab 42``.  Returns the matched prefix
-    (e.g. ``"AB734"``) or ``None`` when no match is found.
-    """
-    parts = pathlib.PurePosixPath(rel_path).parts
-    # Skip the last part (the filename itself); only look at directories.
-    for part in parts[:-1]:
-        m = _AB_PATTERN.match(part)
-        if m:
-            return m.group(0)
-    return None
-
-
 def _hex_to_rgba(hex_color: str, alpha: float = 0.15) -> str:
     """Convert a hex color string to an rgba() string with the given alpha."""
     h = hex_color.lstrip("#")
