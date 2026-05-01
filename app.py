@@ -233,17 +233,14 @@ with st.sidebar:
     if "folder_list" not in st.session_state:
         st.session_state["folder_list"] = []
 
-    folder_col1, folder_col2 = st.columns([2, 1])
-    with folder_col1:
-        if st.button("📁 Add Experiment Folder"):
-            folder_path = pick_folder()
-            if folder_path and folder_path not in st.session_state["folder_list"]:
+    if st.button("➕ Add Experiment Folder"):
+        folder_path = pick_folder()
+        if folder_path:
+            if folder_path not in st.session_state["folder_list"]:
                 st.session_state["folder_list"].append(folder_path)
                 st.rerun()
-    with folder_col2:
-        if st.button("🗑️ Clear All Folders"):
-            st.session_state["folder_list"] = []
-            st.rerun()
+            else:
+                st.warning("This folder has already been added.")
 
     st.header("Technique")
     technique = st.selectbox(
@@ -292,9 +289,9 @@ if data_dir and data_dir.strip():
 if st.session_state.get("folder_list"):
     folder_list = st.session_state["folder_list"]
 
-    # Show summary table of selected folders
-    folder_rows = []
-    for fpath in folder_list:
+    # Show selected folders with individual remove buttons
+    st.markdown("### 📂 Selected Folders")
+    for i, fpath in enumerate(folder_list):
         folder_name = os.path.basename(fpath)
         ab_number = _extract_ab_number(folder_name) or folder_name
         root = pathlib.Path(fpath).expanduser().resolve()  # noqa: S108
@@ -306,29 +303,57 @@ if st.session_state.get("folder_list"):
                 and "DAD1A" in p.stem.upper()
                 and p.suffix.lower() == ".csv"
             )
-        folder_rows.append({
-            "Folder": folder_name,
-            "AB Number": ab_number,
-            "DAD1A files found": dad1a_count,
-        })
-    st.dataframe(pd.DataFrame(folder_rows), use_container_width=True,
-                 hide_index=True)
+
+        col1, col2, col3, col4 = st.columns([3, 1, 1, 1])
+        with col1:
+            st.markdown(f"📁 `{folder_name}`")
+        with col2:
+            st.markdown(f"**{ab_number}**")
+        with col3:
+            st.markdown(f"{dad1a_count} DAD1A file(s)")
+        with col4:
+            if st.button("❌ Remove", key=f"remove_{i}"):
+                st.session_state["folder_list"].pop(i)
+                st.rerun()
+
+    # Clear All button
+    if st.button("🗑️ Clear All"):
+        st.session_state["folder_list"] = []
+        st.rerun()
 
     # Scan each folder and collect datasets
+    all_files: list[tuple[str, str]] = []
     for fpath in folder_list:
         folder_datasets = _scan_local_directory(fpath)
         datasets.extend(folder_datasets)
+        folder_name = os.path.basename(fpath)
+        ab_number = _extract_ab_number(folder_name) or folder_name
+        root = pathlib.Path(fpath).expanduser().resolve()  # noqa: S108
+        dad1a_paths = sorted(
+            p for p in root.rglob("*")
+            if p.is_file()
+            and "DAD1A" in p.stem.upper()
+            and p.suffix.lower() == ".csv"
+        )
+        for j, csv_path in enumerate(dad1a_paths):
+            nickname = (
+                ab_number if len(dad1a_paths) == 1
+                else f"{ab_number}_{j + 1}"
+            )
+            all_files.append((str(csv_path), nickname))
 
-    total_files = sum(r["DAD1A files found"] for r in folder_rows)
-    st.info(
-        f"Total: **{total_files}** DAD1A file(s) across "
-        f"**{len(folder_list)}** folder(s)"
+    st.success(
+        f"✅ {len(all_files)} DAD1A file(s) ready across "
+        f"{len(folder_list)} folder(s)"
     )
+
+if not st.session_state.get("folder_list") and not datasets:
+    st.info("No folders selected yet. Click '➕ Add Experiment Folder' to begin.")
 
 if not datasets:
     st.info(
         "Paste a local data directory path in the sidebar, or use "
-        "**📁 Add Experiment Folder** to select multiple folders."
+        "**➕ Add Experiment Folder** to select multiple folders."
     )
     st.stop()
 

@@ -222,3 +222,43 @@ class TestFolderListDedup:
             if p not in folder_list:
                 folder_list.append(p)
         assert len(folder_list) == 2
+
+
+class TestFolderListRemoval:
+    """Validate individual folder removal from the folder list."""
+
+    def test_remove_single_folder_by_index(self):
+        """Removing a folder by index leaves the others intact."""
+        folder_list = ["/path/a", "/path/b", "/path/c"]
+        folder_list.pop(1)
+        assert folder_list == ["/path/a", "/path/c"]
+
+    def test_remove_first_folder(self):
+        """Removing the first folder shifts the rest."""
+        folder_list = ["/path/a", "/path/b"]
+        folder_list.pop(0)
+        assert folder_list == ["/path/b"]
+
+    def test_remove_last_folder(self):
+        """Removing the last folder leaves the others."""
+        folder_list = ["/path/a", "/path/b"]
+        folder_list.pop(1)
+        assert folder_list == ["/path/a"]
+
+    def test_remove_only_folder_leaves_empty(self):
+        """Removing the sole folder results in an empty list."""
+        folder_list = ["/path/a"]
+        folder_list.pop(0)
+        assert folder_list == []
+
+    def test_clear_all_empties_list(self):
+        """Clearing all folders resets the list to empty."""
+        folder_list = ["/path/a", "/path/b", "/path/c"]
+        folder_list.clear()
+        assert folder_list == []
+
+    def test_remove_preserves_order(self):
+        """After removal, remaining folders keep their original order."""
+        folder_list = ["/path/a", "/path/b", "/path/c", "/path/d"]
+        folder_list.pop(2)  # remove /path/c
+        assert folder_list == ["/path/a", "/path/b", "/path/d"]
