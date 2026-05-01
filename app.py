@@ -113,12 +113,21 @@ def read_two_col_csv(uploaded_file: Any) -> pd.DataFrame | None:
     return df
 
 
-def _scan_local_directory(dir_path: str) -> list[dict[str, Any]]:
-    """Scan a local directory for ``DAD1A*.csv`` files and return datasets.
+def _scan_local_directory(
+    dir_path: str, file_keyword: str = "DAD1A",
+) -> list[dict[str, Any]]:
+    """Scan a local directory for CSV files matching *file_keyword* and return datasets.
 
     Each dataset dict has keys ``filename``, ``label``, and ``df``.  The
     label is the AB identifier extracted from the file's ancestor
     directories, falling back to the parent directory name.
+
+    Parameters
+    ----------
+    dir_path : str
+        Path to the directory to scan.
+    file_keyword : str
+        Keyword to filter CSV filenames (e.g. ``"DAD1A"`` or ``"DAD1B"``).
 
     **Security note:** the *dir_path* is intentionally user-provided —
     this is a local-first analysis tool where the user pastes the path
@@ -130,11 +139,12 @@ def _scan_local_directory(dir_path: str) -> list[dict[str, Any]]:
         return []
 
     results: list[dict[str, Any]] = []
-    # Find DAD1A CSV files anywhere under *root* (case-insensitive).
+    keyword_upper = file_keyword.upper()
+    # Find matching CSV files anywhere under *root* (case-insensitive).
     dad1a_files = sorted(
         p for p in root.rglob("*")
         if p.is_file()
-        and "DAD1A" in p.stem.upper()
+        and keyword_upper in p.stem.upper()
         and p.suffix.lower() == ".csv"
     )
     for csv_path in dad1a_files:
@@ -242,6 +252,16 @@ with st.sidebar:
             else:
                 st.warning("This folder has already been added.")
 
+    st.header("Wavelength")
+    wavelength = st.radio(
+        "Compare wavelength:",
+        options=["280 nm — DAD1A", "260 nm — DAD1B"],
+        index=0,
+    )
+    use_dad1a = wavelength.startswith("280")
+    file_keyword = "DAD1A" if use_dad1a else "DAD1B"
+    wavelength_label = "280 nm (DAD1A)" if use_dad1a else "260 nm (DAD1B)"
+
     st.header("Technique")
     technique = st.selectbox(
         "Chromatography type",
@@ -283,69 +303,67 @@ datasets: list[dict[str, Any]] = []
 # Local directory path (reads filesystem directly, so all ancestor
 # folder names — including AB numbers — are available).
 if data_dir and data_dir.strip():
-    datasets = _scan_local_directory(data_dir.strip())
+    datasets = _scan_local_directory(data_dir.strip(), file_keyword=file_keyword)
 
 # Multi-folder: scan each folder in the session list and combine results.
 if st.session_state.get("folder_list"):
     folder_list = st.session_state["folder_list"]
 
-    # Show selected folders with individual remove buttons
-    st.markdown("### 📂 Selected Folders")
-    for i, fpath in enumerate(folder_list):
-        folder_name = os.path.basename(fpath)
-        ab_number = _extract_ab_number(folder_name) or folder_name
-        root = pathlib.Path(fpath).expanduser().resolve()  # noqa: S108
-        dad1a_count = 0
-        if root.is_dir():
-            dad1a_count = sum(
-                1 for p in root.rglob("*")
-                if p.is_file()
-                and "DAD1A" in p.stem.upper()
-                and p.suffix.lower() == ".csv"
-            )
+    keyword_upper = file_keyword.upper()
 
-        col1, col2, col3, col4 = st.columns([3, 1, 1, 1])
-        with col1:
-            st.markdown(f"📁 `{folder_name}`")
-        with col2:
-            st.markdown(f"**{ab_number}**")
-        with col3:
-            st.markdown(f"{dad1a_count} DAD1A file(s)")
-        with col4:
-            if st.button("❌ Remove", key=f"remove_{i}"):
-                st.session_state["folder_list"].pop(i)
+    # Show selected folders in the sidebar with individual remove buttons
+    with st.sidebar:
+        st.markdown("## 📂 Experiment Folders")
+        for i, fpath in enumerate(folder_list):
+            folder_name = os.path.basename(fpath)
+            ab_number = _extract_ab_number(folder_name) or folder_name
+            col1, col2 = st.columns([3, 1])
+            with col1:
+                st.markdown(
+                    f"**{ab_number}**  \n`{folder_name[:25]}...`"
+                    if len(folder_name) > 25
+                    else f"**{ab_number}**  \n`{folder_name}`"
+                )
+            with col2:
+                if st.button("❌", key=f"remove_{i}"):
+                    st.session_state["folder_list"].pop(i)
+                    st.rerun()
+
+        if st.session_state["folder_list"]:
+            if st.button("🗑️ Clear All"):
+                st.session_state["folder_list"] = []
                 st.rerun()
 
-    # Clear All button
-    if st.button("🗑️ Clear All"):
-        st.session_state["folder_list"] = []
-        st.rerun()
+            total = sum(
+                len([
+                    f for f in os.listdir(p)
+                    if keyword_upper in f.upper() and f.lower().endswith(".csv")
+                ])
+                for p in st.session_state["folder_list"]
+                if os.path.isdir(p)
+            )
+            st.success(f"{total} file(s) ready")
 
     # Scan each folder and collect datasets
     all_files: list[tuple[str, str]] = []
     for fpath in folder_list:
-        folder_datasets = _scan_local_directory(fpath)
+        folder_datasets = _scan_local_directory(fpath, file_keyword=file_keyword)
         datasets.extend(folder_datasets)
         folder_name = os.path.basename(fpath)
         ab_number = _extract_ab_number(folder_name) or folder_name
         root = pathlib.Path(fpath).expanduser().resolve()  # noqa: S108
-        dad1a_paths = sorted(
+        matched_paths = sorted(
             p for p in root.rglob("*")
             if p.is_file()
-            and "DAD1A" in p.stem.upper()
+            and keyword_upper in p.stem.upper()
             and p.suffix.lower() == ".csv"
         )
-        for j, csv_path in enumerate(dad1a_paths):
+        for j, csv_path in enumerate(matched_paths):
             nickname = (
-                ab_number if len(dad1a_paths) == 1
+                ab_number if len(matched_paths) == 1
                 else f"{ab_number}_{j + 1}"
             )
             all_files.append((str(csv_path), nickname))
-
-    st.success(
-        f"✅ {len(all_files)} DAD1A file(s) ready across "
-        f"{len(folder_list)} folder(s)"
-    )
 
 if not st.session_state.get("folder_list") and not datasets:
     st.info("No folders selected yet. Click '➕ Add Experiment Folder' to begin.")
@@ -440,7 +458,9 @@ if display_mode == "Overlay all" or len(chromatograms) == 1:
                     fig.add_annotation(x=pk.time, y=pk.height + yshifts[pi], text=txt, showarrow=False, font=dict(size=10))
 
     fig.update_layout(
-        xaxis_title=x_label, yaxis_title=y_label,
+        title=f"Chromatography Overlay — {wavelength_label}",
+        xaxis_title=x_label,
+        yaxis_title=f"Absorbance (AU) at {wavelength_label}",
         template="plotly_white", width=plot_w, height=plot_h,
         legend_title="Sample",
     )
@@ -484,7 +504,10 @@ else:
                         txt += f", {pk.rel_area_pct:.1f}%"
                     fig.add_annotation(x=pk.time, y=pk.height + yshifts[pi], text=txt, showarrow=False, font=dict(size=10), xref=f"x{idx + 1}" if idx else "x", yref=f"y{idx + 1}" if idx else "y")
 
-    fig.update_layout(template="plotly_white", width=plot_w, height=plot_h)
+    fig.update_layout(
+        title=f"Chromatography Overlay — {wavelength_label}",
+        template="plotly_white", width=plot_w, height=plot_h,
+    )
 
 # ---- Render chart (with click handling when editing bounds) ----
 if edit_bounds:
