@@ -25,6 +25,8 @@ You will see the landing page with the sidebar controls on the left and a prompt
 
 To load data, paste the full path to the folder containing your sample subfolders in the **Data directory (local path)** text input in the sidebar. The app recursively finds DAD1A CSV files and automatically labels each one with the AB number extracted from its parent folder name.
 
+On **macOS**, you can also click the **📁 Select Experiment Folder** button to open a native folder-picker dialog instead of pasting the path manually.
+
 For example, pasting `/Users/you/Data/20260424 151551SYSTEM (SYSTEM)AB628` will detect the AB number `AB628` and load all DAD1A CSV files found inside.
 
 > **Tip:** Two demo files (`TestFile.CSV`, `TestFile2.CSV`) are included in the `tests/` folder for quick testing.
