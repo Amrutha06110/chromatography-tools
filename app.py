@@ -13,6 +13,7 @@ import json
 import os
 import pathlib
 import re
+import subprocess
 from typing import Any
 
 import numpy as np
@@ -46,6 +47,34 @@ TECHNIQUE_MAP: dict[str, type[BaseChromatogram]] = {
 # ------------------------------------------------------------------
 
 _AB_PATTERN = re.compile(r"(?<![A-Za-z])(AB[\s\-_]?\d+)", re.IGNORECASE)
+
+
+def pick_folder() -> str | None:
+    """Open a native macOS folder picker via AppleScript and return the path.
+
+    Returns the selected folder's POSIX path (without trailing slash),
+    or ``None`` if the user cancelled or ``osascript`` is unavailable.
+    """
+    script = (
+        'tell application "System Events"\n'
+        "    activate\n"
+        "end tell\n"
+        'set folderPath to POSIX path of (choose folder with prompt '
+        '"Select experiment folder")\n'
+        "return folderPath"
+    )
+    try:
+        result = subprocess.run(
+            ["osascript", "-e", script],
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        return None
+    if result.returncode == 0:
+        return result.stdout.strip().rstrip("/")
+    return None
 
 
 def _extract_ab_number(*sources: str) -> str | None:
@@ -192,7 +221,7 @@ with st.sidebar:
 
     data_dir = st.text_input(
         "Data directory (local path)",
-        value="",
+        value=st.session_state.get("chrom_folder_path", ""),
         help=(
             "Paste the full path to the folder that contains your sample "
             "subfolders (e.g. '/Users/you/Data/SequenceRun'). The app "
@@ -200,6 +229,12 @@ with st.sidebar:
             "each one with the AB number from its parent folder name."
         ),
     )
+
+    if st.button("📁 Select Experiment Folder"):
+        folder_path = pick_folder()
+        if folder_path:
+            st.session_state["chrom_folder_path"] = folder_path
+            st.rerun()
 
     st.header("Technique")
     technique = st.selectbox(
