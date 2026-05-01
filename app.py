@@ -223,17 +223,26 @@ with st.sidebar:
         "Data directory (local path)",
         value=st.session_state.get("chrom_folder_path", ""),
         help=(
-            "Paste the full path to the folder that contains your sample "
-            "subfolders (e.g. '/Users/you/Data/SequenceRun'). The app "
-            "recursively finds DAD1A CSV files and automatically labels "
-            "each one with the AB number from its parent folder name."
+            "Paste the full path to a single folder that contains your "
+            "sample subfolders, or use the buttons below to add multiple "
+            "experiment folders one by one."
         ),
     )
 
-    if st.button("📁 Select Experiment Folder"):
-        folder_path = pick_folder()
-        if folder_path:
-            st.session_state["chrom_folder_path"] = folder_path
+    # ---- Multi-folder session state ----
+    if "folder_list" not in st.session_state:
+        st.session_state["folder_list"] = []
+
+    folder_col1, folder_col2 = st.columns([2, 1])
+    with folder_col1:
+        if st.button("📁 Add Experiment Folder"):
+            folder_path = pick_folder()
+            if folder_path and folder_path not in st.session_state["folder_list"]:
+                st.session_state["folder_list"].append(folder_path)
+                st.rerun()
+    with folder_col2:
+        if st.button("🗑️ Clear All Folders"):
+            st.session_state["folder_list"] = []
             st.rerun()
 
     st.header("Technique")
@@ -279,10 +288,47 @@ datasets: list[dict[str, Any]] = []
 if data_dir and data_dir.strip():
     datasets = _scan_local_directory(data_dir.strip())
 
+# Multi-folder: scan each folder in the session list and combine results.
+if st.session_state.get("folder_list"):
+    folder_list = st.session_state["folder_list"]
+
+    # Show summary table of selected folders
+    folder_rows = []
+    for fpath in folder_list:
+        folder_name = os.path.basename(fpath)
+        ab_number = _extract_ab_number(folder_name) or folder_name
+        root = pathlib.Path(fpath).expanduser().resolve()  # noqa: S108
+        dad1a_count = 0
+        if root.is_dir():
+            dad1a_count = sum(
+                1 for p in root.rglob("*")
+                if p.is_file()
+                and "DAD1A" in p.stem.upper()
+                and p.suffix.lower() == ".csv"
+            )
+        folder_rows.append({
+            "Folder": folder_name,
+            "AB Number": ab_number,
+            "DAD1A files found": dad1a_count,
+        })
+    st.dataframe(pd.DataFrame(folder_rows), use_container_width=True,
+                 hide_index=True)
+
+    # Scan each folder and collect datasets
+    for fpath in folder_list:
+        folder_datasets = _scan_local_directory(fpath)
+        datasets.extend(folder_datasets)
+
+    total_files = sum(r["DAD1A files found"] for r in folder_rows)
+    st.info(
+        f"Total: **{total_files}** DAD1A file(s) across "
+        f"**{len(folder_list)}** folder(s)"
+    )
+
 if not datasets:
     st.info(
-        "Paste a local data directory path in the sidebar to automatically "
-        "find DAD1A files and label them with AB numbers."
+        "Paste a local data directory path in the sidebar, or use "
+        "**📁 Add Experiment Folder** to select multiple folders."
     )
     st.stop()
 

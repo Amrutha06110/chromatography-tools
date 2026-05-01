@@ -23,11 +23,17 @@ You will see the landing page with the sidebar controls on the left and a prompt
 
 ## Step 2 — Load Your Data
 
-To load data, paste the full path to the folder containing your sample subfolders in the **Data directory (local path)** text input in the sidebar. The app recursively finds DAD1A CSV files and automatically labels each one with the AB number extracted from its parent folder name.
+There are two ways to load data:
 
-On **macOS**, you can also click the **📁 Select Experiment Folder** button to open a native folder-picker dialog instead of pasting the path manually.
+### Option A — Single folder (text input)
+Paste the full path to the folder containing your sample subfolders in the **Data directory (local path)** text input in the sidebar. The app recursively finds DAD1A CSV files and automatically labels each one with the AB number extracted from its parent folder name.
 
 For example, pasting `/Users/you/Data/20260424 151551SYSTEM (SYSTEM)AB628` will detect the AB number `AB628` and load all DAD1A CSV files found inside.
+
+### Option B — Multiple folders (recommended)
+On **macOS**, click the **📁 Add Experiment Folder** button as many times as needed to select multiple folders. Each folder gets its own AB number extracted from its folder name. All DAD1A files from all selected folders are processed together on one plot.
+
+A summary table shows each selected folder's name, AB number, and how many DAD1A files were found. Click **🗑️ Clear All Folders** to reset and start fresh.
 
 > **Tip:** Two demo files (`TestFile.CSV`, `TestFile2.CSV`) are included in the `tests/` folder for quick testing.
 
@@ -135,7 +141,7 @@ All controls are organized in the sidebar for easy access:
 
 | Section | Controls |
 |---|---|
-| **Data** | File upload (drag-and-drop or browse) |
+| **Data** | Local path input, multi-folder selection (Add/Clear) |
 | **Technique** | Chromatography type dropdown |
 | **Display** | Overlay/Separate mode, peak visibility toggles |
 | **Peak Picking** | Min height threshold slider |
